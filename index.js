@@ -7,7 +7,7 @@ global.document = document;
 
 var $ = jQuery = require('jquery')(window);
 
-// Used for making http request to authorize spotify login
+// Used for making http request to trigger authorization for spotify login
 var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
 
 // Configures the discord client 
@@ -15,9 +15,17 @@ const Discord = require('discord.js');
 const client = new Discord.Client();
 usr = "default";
 
-var user_id_ = '';  // Id of the user whose spotify account playlists will be added to
-var tracks_ = [];  // List of spotify track objects to be added to playlists
-var channel;  // Channel the last discord message was sent in
+var user_id_ = '';       // Id of the user whose spotify account playlists will be added to
+var access_token_ = '';  // Authroized access token needed to use spotify
+var tracks_ = [];        // List of spotify track objects to be added to playlists
+var channel_;            // Channel the last discord message was sent in
+var playlist_channel_;   // Channel a !playlist request was made in
+var playlist_call_id_;   // Message id of the message that triggered the playlist function
+var last_msg_id_;        // Used in playlist loop, last retrieved message id 
+var end_of_messages_ = false  // Used to tell if we've reached the end of messages in a channel...
+
+var last_msg_;           // Last message posted in any channel
+var playlist_url_;
 
 // Runs when bot starts up
 client.on('ready', () => {
@@ -27,87 +35,169 @@ client.on('ready', () => {
 
 // Runs everytime a new messge is posted to any channel
 client.on('message', msg => {
-    // Find the channel the last message was sent in
-    channel = client.channels.cache.get(msg.channel.id);
+    // Set channel_ to the channel the last message was sent in
+    channel_ = client.channels.cache.get(msg.channel.id);
+    last_msg_ = msg;
 
-    // Command to create a spotify playlist from add songs in a specific channel
+    // Command to create a spotify playlist from songs in a specific channel
     if (msg.content === '!playlist') {
-        //msg.reply('Playlist Made?');
-        //httpGetAsync('http://localhost:8888/login', console.log);
-        //collectTracks(channel);
+        playlist_channel_ = client.channels.cache.get(msg.channel.id);
+        playlist_call_id = msg.id;
+        makeNewPlaylist();
     }
 
     if (msg.content.toUpperCase().includes("HENTAIBOT")) {
       //msg.reply("OWO ~");
-      channel.send("OWO~ you called?!");
+      channel_.send("OWO~ you called?!");
     }
 });
 
 // Logs in with token from the bot portal
-client.login(''); // Remove before commits to GitHub
+client.login(''); // REMOVE BEFORE GITHUB COMMITS
 
 
-// Collects all songs from the channel it was messaged in (all their URIs)
-function collectTracks(local_channel) {
-  var all_ms;
-  local_channel.messages.fetch({ limit: 50 })
-    .then(messages => collectTracksCallback(messages), error => console.log(error))
-    .catch(console.error);
-  console.log("in collection");
+function makeNewPlaylist() {
+  if (access_token_ != '') {
+    // Collect tracks and post to a new playlist
+    collectTracks(playlist_channel_);
+  } else {
+    // Gain spotify access
+    httpGetAsync('http://localhost:8888/login', console.log);
+  }
 }
 
+// Collects all songs from a given channel
+function collectTracks(local_channel) {
+  // Get 100 messages at a time...
+
+  last_msg_id_ = playlist_call_id_;
+
+  const request = async () => {
+   while (end_of_messages_ == false) {
+      await local_channel.messages.fetch({ limit: 100, before: last_msg_id_ })
+      .then(
+        messages => collectTracksCallback(messages),
+        error => console.log(error))
+      .catch(console.error);
+   }
+   makePlaylist(user_id_, "Test Playlist!", access_token_, console.log);
+  }
+
+  request();
+}
+
+
+// Collects all songs from a channel's messages, stores them in tracks_
 function collectTracksCallback(messages) {
   console.log(`Message size is ${messages.size}`);
 
-  var tracks = '';
-  
-  for (let [key, msg] of messages) {
-    //console.log(key + ' goes ' + msg.content);
-    if (msg.content.includes("https://open.spotify.com/track/")) {
-      //console.log(key + ' goes ' + msg.content);
-      song_link = '' + msg.content.split("https://open.spotify.com/track/").slice(1);
-      console.log(`SONG URI spotify:track:${song_link}`);
+  var first_msg = true;
 
-      // Get the song from spotify
-      $.ajax({
-        type: 'GET',
-        url: 'https://open.spotify.com/track/' + song_link,
-        dataType: 'json',
-        headers: {
-          'Authorization': 'Bearer ' + g_access_token
-        },
-        contentType: 'application/json',
-        success: function(result) {
-          console.log(result)
-          console.log('Woo! :)');
-          console.log(result.external_urls.spotify);
-          var playlist_url = result.external_urls.spotify;
-          channel.send(playlist_url);
-        },
-        error: function(r) {
-          console.log(r)
-          console.log('Error! :(');
-        }
-      });
-      //tracks.push(song_link + ', ';
+  for (let [key, msg] of messages) {
+    console.log(key + " " + msg.content);
+    
+
+    last_msg_id_ = key;
+
+    if (msg.content.includes("https://open.spotify.com/track/")) {
+      song_uri = 'spotify:track:' + msg.content.split('https://open.spotify.com/track/').pop().split('?')[0];
+
+      tracks_.push(song_uri);
     }
   }
 
-  tracks_ = tracks;
-  console.log(`TRACKS ${tracks_}`);
-  httpGetAsync('http://localhost:8888/login', console.log);
+  if (messages.size < 100) {
+    console.log('TRACKS TRACKS');
+    console.log(tracks_);
+    end_of_messages_ = true;
+  }
+
+  console.log("NEW MESSAGE ID");
+  console.log(last_msg_id_);
 }
 
 
-// BEGIN SPOTIFY AUTHENTICATION
-function httpGetAsync(theUrl, callback)
+// Creates a spotify playlist
+function makePlaylist(user_id, playlist_name, access_token, callback) {
+  var url = 'https://api.spotify.com/v1/users/' +  user_id + '/playlists';
+
+  console.log("IN PLAYLIST")
+
+  var playlist_url = '';
+
+  $.ajax({
+    type: 'POST',
+    url: url,
+    data: JSON.stringify({
+      'name': playlist_name,
+      'public': true
+    }),
+    dataType: 'json',
+    headers: {
+      'Authorization': 'Bearer ' + access_token
+    },
+    contentType: 'application/json',
+    success: function(result) {
+      console.log('Playlist created!');
+
+      // Now Add Songs to it
+
+      playlist_url = result.external_urls.spotify;
+      console.log(playlist_url);
+
+      playlist_url_ = result.external_urls.spotify;
+
+      addTracks(playlist_url_);
+    },
+    error: function(r) {
+      console.log(r)
+      console.log('Error!');
+    }
+  });
+
+
+
+}
+
+function addTracks(playlist_url) {
+  var playlist_id = '' + playlist_url.split('https://open.spotify.com/playlist/').slice(1);
+  console.log(playlist_id);
+
+  $.ajax({
+    type: 'POST',
+    url: 'https://api.spotify.com/v1/users/' + user_id_ + '/playlists/' + playlist_id + '/tracks', 
+    dataType: 'json',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + access_token_
+    },
+    data: JSON.stringify({
+      'uris': tracks_
+    }),
+    success: function(result) {
+      playlist_channel_.send(playlist_url);
+      console.log('Success!');
+    },
+    error: function(r) {
+      console.log(r)
+      console.log('Error!');
+    }
+  });
+}
+
+
+// BEGIN SPOTIFY AUTHORIZATION
+
+// Makes a get request the given URL 
+// Used to automatically make a request to login
+function httpGetAsync(url, callback)
 {
     var xmlHttp = new XMLHttpRequest();
     xmlHttp.onreadystatechange = function() { 
         if (xmlHttp.readyState == 4 && xmlHttp.status == 200)
             callback(xmlHttp.responseText);
     }
-    xmlHttp.open("GET", theUrl, true); // true for asynchronous 
+    xmlHttp.open("GET", url, true); // true for asynchronous 
     xmlHttp.send(null);
 }
 
@@ -154,40 +244,36 @@ app.use(express.static(__dirname + '/public'))
    .use(cookieParser());
 
 app.get('/login', function(req, res) {
+  var state = generateRandomString(16);
+  res.cookie(stateKey, state);
 
-  // If already authorized, don't do anything
-  if (temp_access_token === '') {
-    var state = generateRandomString(16);
-    res.cookie(stateKey, state);
-
-    // your application requests authorization
-    var scope = 'user-read-private user-read-email playlist-modify-public playlist-read-collaborative playlist-read-private playlist-modify-private';
-    res.redirect('https://accounts.spotify.com/authorize?' +
-      querystring.stringify({
-        response_type: 'code',
-        client_id: client_id,
-        scope: scope,
-        redirect_uri: redirect_uri,
-        state: state
-      }));
-
-    var url = 'https://accounts.spotify.com/authorize?' +
+  // your application requests authorization
+  var scope = 'user-read-private user-read-email playlist-modify-public playlist-read-collaborative playlist-read-private playlist-modify-private';
+  res.redirect('https://accounts.spotify.com/authorize?' +
     querystring.stringify({
       response_type: 'code',
       client_id: client_id,
       scope: scope,
       redirect_uri: redirect_uri,
       state: state
-    });
+    }));
 
-    console.log(url);
-  } else {
-    makePlaylist(user_id, "Test Playlist 3", temp_access_token, console.log);
-  }
+  var url = 'https://accounts.spotify.com/authorize?' +
+  querystring.stringify({
+    response_type: 'code',
+    client_id: client_id,
+    scope: scope,
+    redirect_uri: redirect_uri,
+    state: state
+  });
+
+  //console.log(url);
+  // URL links to the autorization page
+  last_msg_.author.send("I need authorization to make a playlist!");
+  last_msg_.author.send(url);
+  console.log("URL SENT");
 });
 
-var user_id = '';
-var temp_access_token = '';
 
 app.get('/callback', function(req, res) {
   // your application requests refresh and access tokens
@@ -232,12 +318,12 @@ app.get('/callback', function(req, res) {
       console.log("inside of post I guess");
       // use the access token to access the Spotify Web API
       request.get(options, function(error, response, body) {
-        console.log(body);
-        temp_access_token = access_token;
-        user_id = body.id;
+        // Save this info so authorization not required every time
+        access_token_ = access_token;
+        user_id_ = body.id;
 
-        // ALL USEFUL INFO ABOUT USER IS STORED IN BODY
-        makePlaylist(body.id, "Test Playlist 2", access_token, console.log);
+        // NOW collect tracks and post them to a playlist
+        makeNewPlaylist();
       });
 
       // we can also pass the token to the browser to make requests from there
@@ -253,8 +339,6 @@ app.get('/callback', function(req, res) {
         }));
     }
   });
-
-  // }
 });
 
 app.get('/refresh_token', function(req, res) {
@@ -286,74 +370,12 @@ app.listen(8888);
 
 // END SPOTIFY AUTHENTICATION
 
-// app.get('/makeplaylist', function(req, res) {
-
-//   request.post({
-//     headers: {'content-type' : 'application/json', 'Authorization': 'Bearer ' + auth_code},
-//     url:     'https://api.spotify.com/v1/users/' + user_id + '/playlists',
-//     body:    JSON.stringify({'name': "Test P", 'public': true})
-//   }, function(error, response, body){
-    
-//     console.log("REPSONSE");
-//     //console.log(response);
-//     console.log("after");
-//     console.log(auth_code);
-//     //console.log(response);
-//   });
 
 
-  // request.post(authOptions, function(error, response, body) {
-  //   if (!error && response.statusCode === 200) {
-  //     var access_token = body.access_token;
-  //     res.send({
-  //       'access_token': access_token
-  //     });
-  //   }
-  // });
-  // makePlaylist(user_id, "Test P", auth_code, console.log);
-// });
 
 
-function makePlaylist(user_id, playlist_name, g_access_token, callback) {
-  console.log('create playlist');
-  var url = 'https://api.spotify.com/v1/users/' +  user_id + '/playlists';
-  
-  var json_data = {
-    'name': playlist_name,
-    'public': true
-  };
 
-  $.ajax({
-    type: 'POST',
-    url: url,
-    data: JSON.stringify({
-      'name': playlist_name,
-      'public': true,
-      'tracks': tracks_
-    }),
-    dataType: 'json',
-    headers: {
-      'Authorization': 'Bearer ' + g_access_token
-    },
-    contentType: 'application/json',
-    success: function(result) {
-      console.log(result)
-      console.log('Woo! :)');
-      console.log(result.external_urls.spotify);
-      var playlist_url = result.external_urls.spotify;
-      channel.send(playlist_url);
-    },
-    error: function(r) {
-      console.log(r)
-      console.log('Error! :(');
-    }
-  });
-
-
-}
-
-
-// // not my code
+// // NOT MY CODE
 // var g_access_token = '';
 // var g_username = '';
 // var g_tracks = [];
