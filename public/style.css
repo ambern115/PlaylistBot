@@ -1,0 +1,14 @@
+#user-header {
+  text-align: center;
+  background: #eca6f5;
+  font-family: 'Comic Sans MS', cursive;
+  padding: 12px;
+}
+
+#image {
+  border: 5px dotted #444345;
+}
+
+body {
+  background: #eae6eb;
+}

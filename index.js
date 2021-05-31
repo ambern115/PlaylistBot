@@ -79,9 +79,9 @@ bot.on('message', msg => {
 
     // Command to create a spotify playlist from songs in a specific channel
     if (msg.content === '!playlist') {
-        playlist_channel_ = bot.channels.cache.get(msg.channel.id);
-        playlist_call_id = msg.id;
-        makeNewPlaylist();
+      playlist_channel_ = bot.channels.cache.get(msg.channel.id);
+      playlist_call_id = msg.id;
+      makeNewPlaylist();
     }
     
     if (msg.content.toUpperCase().includes("HENTAIBOT")) {
@@ -96,7 +96,7 @@ bot.on('message', msg => {
 
     if (msg.content === '!refresh') {
       msg.reply("Refreshing token!");
-      refreshToken();
+      refreshToken(console.log);
     }
 
     if (msg.content == '!randomsong') {
@@ -125,8 +125,7 @@ function getRandomSong() {
       error: function(r) {
         if (r.statusText === 'Unauthorized') {
           console.log("Access denied, refreshing access token");
-          refreshToken();
-          getRandomSong();
+          refreshToken(getRandomSong);
         } else {
           console.log(r)
           console.log('Error!');
@@ -167,21 +166,25 @@ function makeNewPlaylist() {
 
 // Collects all songs from a given channel
 function collectTracks(channel) {
-  // Get 100 messages at a time, the max you can get
+  // Gets 100 messages at a time, the max you can get
   last_msg_id_ = playlist_call_id_;
 
   const request = async () => {
-   while (end_of_messages_ == false) {
+    while (end_of_messages_ == false) {
       await channel.messages.fetch({ limit: 100, before: last_msg_id_ })
       .then(
         messages => collectTracksCallback(messages),
         error => console.log(error))
       .catch(console.error);
-   }
-   // Checks if the signed in user already has a playlist with this name
-   checkPlaylistName(user_id_, "Test Playlist!", access_token_, makePlaylist);
+    }
+    
+    let playlist_name = "PlaylistBot";
+    if (channel.guild) {
+      playlist_name = channel.guild.name + ': ' + channel.name;
+    }
+    // Checks if the signed in user already has a playlist with this name
+    checkPlaylistName(user_id_, playlist_name, access_token_, makePlaylist);
   }
-
   request();
 }
 
@@ -196,7 +199,6 @@ function collectTracksCallback(messages) {
 
     if (msg.content.includes("https://open.spotify.com/track/")) {
       song_uri = 'spotify:track:' + msg.content.split('https://open.spotify.com/track/').pop().split('?')[0];
-
       tracks_.push(song_uri);
     }
   }
@@ -208,8 +210,12 @@ function collectTracksCallback(messages) {
 }
 
 // Check's if the signed in user already has a playlist with playlist_name
-// and sends it ID over to createPlaylist in the callback
+// and sends its ID over to createPlaylist in the callback.
+// If the playlist does not exist, it sends a null id over to create a new playlist.
 function checkPlaylistName(user_id, playlist_name, access_token, callback) {
+  console.log('in check playlist name');
+  // This is only checking 50 playlists. May need to add more here to 
+  // have it check as many playlist that exist for a user???
   var url = 'https://api.spotify.com/v1/users/' +  user_id + '/playlists?limit=50';
   var playlist_id = '';
   $.ajax({
@@ -222,7 +228,6 @@ function checkPlaylistName(user_id, playlist_name, access_token, callback) {
       console.log(result.items.length);
       for (i=0; i < result.items.length; i++) {
         if (result.items[i].name == playlist_name) {
-          console.log(result.items[i]);
           playlist_id = result.items[i].id;
         }
       }
@@ -441,14 +446,14 @@ app.get('/refresh_token', function(req, res) {
 function hasAccess() {
   if (access_token_ == '') {
     httpGetAsync('http://localhost:8888/login', console.log);
-    last_msg_.reply("You need to login to spotify! Login through this link and try this command again.");
+    last_msg_.reply("You need to login to spotify! Login through the link I dmed you and try this command again.");
     return false;
   }
   return true;
 }
 
 // Function to call within js that refreshes the access token when needed
-function refreshToken() {
+function refreshToken(callback) {
   $.ajax({
     url: '/refresh_token',
     data: {
@@ -458,6 +463,7 @@ function refreshToken() {
     oauthPlaceholder.innerHTML = oauthTemplate({
       access_token: data.access_token
     });
+    callback();
   });
 }
 
