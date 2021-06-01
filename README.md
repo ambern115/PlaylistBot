@@ -10,6 +10,8 @@ Upon executing for the first time, you will most likely need to install several 
 - Make sure you have npm installed (npm -v)
 - Any missing modules listed hereafter can be installed by doing $npm install <module name>
 - (TODO: make script that can install all needed modules automatically)
+  
+- Needs cache.json file in main folder so user auth can be cached. 
 
 
 Will not work without secret key filled in
