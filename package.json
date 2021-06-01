@@ -3,15 +3,18 @@
   "version": "1.0.0",
   "description": "A playlist bot for discord",
   "main": "index.js",
+  "nodemonConfig": {
+    "ignore": ["cache.json"]
+  },
   "dependencies": {
     "cookie-parser": "^1.4.5",
     "cors": "^2.8.5",
     "discord.js": "^12.5.1",
     "dotenv": "^8.2.0",
     "express": "^4.17.1",
-    "jquery": "^3.4.1",
+    "jquery": "^3.6.0",
     "jsdom": "^16.2.1",
-    "node-fetch": "^2.6.0",
+    "node-fetch": "^2.6.1",
     "request": "^2.88.2",
     "spotify-web-api-node": "^4.0.0",
     "xmlhttprequest": "^1.8.0"
